@@ -2,6 +2,7 @@ import modal
 
 SANDBOX_TIMEOUT = 86400  # 24 hours
 
+
 async def run_sandbox_server_with_tunnel(app: modal.App, image: modal.Image):
     """Create and run a sandbox with an HTTP server exposed via tunnel"""
     print("🚀 Creating sandbox...")
@@ -15,7 +16,7 @@ async def run_sandbox_server_with_tunnel(app: modal.App, image: modal.Image):
     )
     print(f"📋 Created sandbox with ID: {sb.object_id}")
 
-    print("⏳ Waiting for tunnels to establish...")    
+    print("⏳ Waiting for tunnels to establish...")
     tunnels = await sb.tunnels.aio()
     main_tunnel = tunnels[8000]
     user_tunnel = tunnels[5173]

@@ -3,11 +3,12 @@
 import os
 from datetime import datetime
 
-from core.llm import get_llm_client
-from core.sandbox import AppDirectory, SandboxApp
 import modal
 from dotenv import load_dotenv
 from modal import Dict
+
+from core.llm import get_llm_client
+from core.sandbox import AppDirectory, SandboxApp
 
 load_dotenv()
 llm_client = get_llm_client()
@@ -31,8 +32,7 @@ core_image = (
     .add_local_dir("core", "/root/core")
 )
 image = (
-    core_image
-    .add_local_dir("web", "/root/web")
+    core_image.add_local_dir("web", "/root/web")
     .add_local_dir("sandbox", "/root/sandbox")
     .add_local_dir("core", "/root/core")
 )
@@ -62,74 +62,75 @@ sandbox_image = (
         "httpx",
     )
     .add_local_dir("web/vite-app", "/root/vite-app", copy=True)
-    .run_commands(
-        "pnpm install --dir /root/vite-app --force"
-    )
+    .run_commands("pnpm install --dir /root/vite-app --force")
     .add_local_file("sandbox/startup.sh", "/root/startup.sh", copy=True)
     .run_commands("chmod +x /root/startup.sh")
     .add_local_dir("sandbox", "/root/sandbox")
     .add_local_file("sandbox/server.py", "/root/server.py")
 )
 
+
 @app.function(
     image=image,
     secrets=[modal.Secret.from_name("anthropic-secret")],
     timeout=3600,
 )
-async def create_sandbox_app(prompt: str) -> str:    
+async def create_sandbox_app(prompt: str) -> str:
     print(f"Creating sandbox app with prompt: {prompt}")
-    
+
     app_directory = AppDirectory(apps_dict, app, llm_client)
     print("Initialized app directory")
     sandbox_app = await SandboxApp.create(app, llm_client, prompt, image=sandbox_image)
     app_directory.set_app(sandbox_app)
     print(f"Created image {sandbox_image.object_id}")
     print(f"Created and saved sandbox app with ID: {sandbox_app.id}")
-    
+
     return sandbox_app.id
+
 
 @app.function(
     image=image,
-    secrets=[modal.Secret.from_name("anthropic-secret"), modal.Secret.from_name("admin-secret")],
-    min_containers=1
+    secrets=[
+        modal.Secret.from_name("anthropic-secret"),
+        modal.Secret.from_name("admin-secret"),
+    ],
+    min_containers=1,
 )
 @modal.concurrent(max_inputs=100)
 @modal.asgi_app(custom_domains=["vibes.modal.chat"])
 def fastapi_app():
-    from fastapi import FastAPI, Request, HTTPException
+    import httpx
+    from fastapi import FastAPI, HTTPException, Request
     from fastapi.responses import JSONResponse
     from fastapi.staticfiles import StaticFiles
     from fastapi.templating import Jinja2Templates
     from pydantic import BaseModel
-    import httpx
 
     app_directory = AppDirectory(apps_dict, app, llm_client)
     app_directory.load()
 
-
     class CreateAppRequest(BaseModel):
         prompt: str
-        
+
     class CreateAppResponse(BaseModel):
         app_id: str
-    
+
     class WriteAppRequest(BaseModel):
         text: str
-        
+
     class TerminateAppRequest(BaseModel):
         admin_secret: str
-    
+
     class ToggleFeatureRequest(BaseModel):
         admin_secret: str
 
     class SnapshotAppRequest(BaseModel):
         admin_secret: str
-        
 
     web_app = FastAPI(
         title="Modal Sandbox API",
         description="API for creating and managing sandbox applications",
-        version="1.0.0"
+        version="1.0.0",
     )
     web_app.mount("/static", StaticFiles(directory="/root/web/static"), name="static")
 
@@ -173,11 +174,12 @@ def fastapi_app():
             count += 1
             apps_dict[app_id] = {
                 "url": app_metadata.sandbox_user_tunnel_url,
-                "title": app_metadata.title if hasattr(app_metadata, 'title') else "",
-                "is_featured": app_metadata.is_featured if hasattr(app_metadata, 'is_featured') else False
+                "title": app_metadata.title if hasattr(app_metadata, "title") else "",
+                "is_featured": app_metadata.is_featured
+                if hasattr(app_metadata, "is_featured")
+                else False,
             }
         return apps_dict
-        
 
     @web_app.get("/app/{app_id}")
     async def app_page(request: Request, app_id: str):
@@ -190,8 +192,12 @@ def fastapi_app():
                 "app_url": app.data.sandbox_user_tunnel_url,
                 "relay_url": app.data.sandbox_tunnel_url,
                 "message_history": app.data.message_history,
-                "app_title": app.metadata.title if hasattr(app.metadata, 'title') else "",
-                "is_featured": app.metadata.is_featured if hasattr(app.metadata, 'is_featured') else False,
+                "app_title": app.metadata.title
+                if hasattr(app.metadata, "title")
+                else "",
+                "is_featured": app.metadata.is_featured
+                if hasattr(app.metadata, "is_featured")
+                else False,
             },
         )
 
@@ -211,14 +217,17 @@ def fastapi_app():
     async def write_app(app_id: str, request_data: WriteAppRequest):
         app = _get_app_or_raise(app_id)
         try:
-            print(f"Starting edit for app {app_id} with text: {request_data.text[:100] if request_data.text else ''}...")
+            print(
+                f"Starting edit for app {app_id} with text: {request_data.text[:100] if request_data.text else ''}..."
+            )
             response = await app.edit(request_data.text)
             print(f"Edit completed, response status: {response.status_code}")
             app_directory.set_app(app)
-            
+
             # Try to parse JSON response, handle both sync and async json() methods
             try:
                 import inspect
+
                 json_method = response.json()
                 # Check if json() returns a coroutine (async) or a dict (sync)
                 if inspect.iscoroutine(json_method):
@@ -230,11 +239,12 @@ def fastapi_app():
                 print(f"Failed to parse JSON response: {json_error}")
                 # If JSON parsing fails, return a generic success response
                 response_data = {"status": "ok"}
-                
+
             return JSONResponse(response_data, status_code=response.status_code)
         except Exception as e:
             print(f"Error writing to relay with data: {request_data}: {str(e)}")
             import traceback
+
             traceback.print_exc()
             return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
@@ -252,8 +262,8 @@ def fastapi_app():
                 # TODO(joy): Figure out what this does so I'm not blindly vibe coding.
                 "Cache-Control": "no-cache, no-store, must-revalidate",
                 "Pragma": "no-cache",
-                "Expires": "0"
-            }
+                "Expires": "0",
+            },
         )
 
     @web_app.get("/api/app/{app_id}/status")
@@ -273,6 +283,7 @@ def fastapi_app():
                 print(f"Ping response status: {response.status_code}")
                 # Handle both sync and async json() methods
                 import inspect
+
                 json_method = response.json()
                 if inspect.iscoroutine(json_method):
                     response_data = await json_method
@@ -288,34 +299,49 @@ def fastapi_app():
         """Terminate a sandbox app with admin authentication"""
         admin_secret = os.getenv("ADMIN_SECRET")
         if not admin_secret:
-            return JSONResponse({"status": "error", "message": "Admin functionality not configured"}, status_code=503)
-        
+            return JSONResponse(
+                {"status": "error", "message": "Admin functionality not configured"},
+                status_code=503,
+            )
+
         if request_data.admin_secret != admin_secret:
-            return JSONResponse({"status": "error", "message": "Invalid admin secret"}, status_code=403)
-        
+            return JSONResponse(
+                {"status": "error", "message": "Invalid admin secret"}, status_code=403
+            )
+
         app = _get_app_or_raise(app_id)
         try:
             success = app.terminate()
             if success:
                 app_directory.remove_app(app_id)
-                return JSONResponse({"status": "success", "message": f"Sandbox {app_id} terminated successfully"})
+                return JSONResponse(
+                    {
+                        "status": "success",
+                        "message": f"Sandbox {app_id} terminated successfully",
+                    }
+                )
             else:
-                return JSONResponse({"status": "error", "message": "Failed to terminate sandbox"}, status_code=500)
+                return JSONResponse(
+                    {"status": "error", "message": "Failed to terminate sandbox"},
+                    status_code=500,
+                )
         except Exception as e:
             print(f"Error terminating sandbox {app_id}: {str(e)}")
             return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
-    
+
     @web_app.post("/api/app/{app_id}/snapshot")
     async def snapshot_app(app_id: str, request_data: SnapshotAppRequest):
         """Snapshot an app with admin authentication"""
         admin_secret = os.environ.get("ADMIN_SECRET", "")
         if not admin_secret or request_data.admin_secret != admin_secret:
             raise HTTPException(status_code=403, detail="Invalid admin secret")
-        
+
         app = _get_app_or_raise(app_id)
         sandbox = modal.Sandbox.from_object_id(app.data.sandbox_object_id)
         image = sandbox.snapshot_filesystem()
-        return JSONResponse({"status": "success", "image": image.object_id}, status_code=200)
+        return JSONResponse(
+            {"status": "success", "image": image.object_id}, status_code=200
+        )
 
     @web_app.post("/api/app/{app_id}/toggle-feature")
     async def toggle_feature_app(app_id: str, request_data: ToggleFeatureRequest):
@@ -323,20 +349,22 @@ def fastapi_app():
         admin_secret = os.environ.get("ADMIN_SECRET", "")
         if not admin_secret or request_data.admin_secret != admin_secret:
             raise HTTPException(status_code=403, detail="Invalid admin secret")
-        
+
         app = _get_app_or_raise(app_id)
-        
+
         try:
-            app.metadata.is_featured = not getattr(app.metadata, 'is_featured', False)
+            app.metadata.is_featured = not getattr(app.metadata, "is_featured", False)
             app.metadata.updated_at = datetime.now()
-            
+
             app_directory.set_app(app)
-            
-            return JSONResponse({
-                "status": "success", 
-                "is_featured": app.metadata.is_featured,
-                "message": f"App {app_id} is now {'featured' if app.metadata.is_featured else 'not featured'}"
-            })
+
+            return JSONResponse(
+                {
+                    "status": "success",
+                    "is_featured": app.metadata.is_featured,
+                    "message": f"App {app_id} is now {'featured' if app.metadata.is_featured else 'not featured'}",
+                }
+            )
         except Exception as e:
             print(f"Error toggling feature status for {app_id}: {str(e)}")
             return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
@@ -346,17 +374,22 @@ def fastapi_app():
         """Terminate all sandbox apps with admin authentication"""
         admin_secret = os.getenv("ADMIN_SECRET")
         if not admin_secret:
-            return JSONResponse({"status": "error", "message": "Admin functionality not configured"}, status_code=503)
-        
+            return JSONResponse(
+                {"status": "error", "message": "Admin functionality not configured"},
+                status_code=503,
+            )
+
         if request_data.admin_secret != admin_secret:
-            return JSONResponse({"status": "error", "message": "Invalid admin secret"}, status_code=403)
-        
+            return JSONResponse(
+                {"status": "error", "message": "Invalid admin secret"}, status_code=403
+            )
+
         app_directory.load()  # Ensure we have the latest apps
         apps = app_directory.apps.keys()
         terminated_count = 0
         failed_count = 0
         apps_copy = list(apps)
-        
+
         for app_id in apps_copy:
             try:
                 sandbox_app = app_directory.get_app(app_id)
@@ -374,19 +407,22 @@ def fastapi_app():
             except Exception as e:
                 failed_count += 1
                 print(f"❌ Error terminating sandbox {app_id}: {str(e)}")
-        
+
         for sandbox in modal.Sandbox.list(app_id=app.app_id):
             print(f"Sandbox: {sandbox.object_id}")
             sandbox.terminate()
 
-        return JSONResponse({
-            "status": "success", 
-            "message": f"Terminated {terminated_count} sandboxes successfully, {failed_count} failed",
-            "terminated": terminated_count,
-            "failed": failed_count
-        })
+        return JSONResponse(
+            {
+                "status": "success",
+                "message": f"Terminated {terminated_count} sandboxes successfully, {failed_count} failed",
+                "terminated": terminated_count,
+                "failed": failed_count,
+            }
+        )
 
     return web_app
+
 
 @app.function(schedule=modal.Period(minutes=1))
 async def clean_up_dead_apps():

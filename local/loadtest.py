@@ -1,8 +1,8 @@
-
-from core.llm import get_llm_client
 import modal
 from dotenv import load_dotenv
 from modal import Dict
+
+from core.llm import get_llm_client
 
 load_dotenv()
 llm_client = get_llm_client()
@@ -26,8 +26,7 @@ core_image = (
     .add_local_dir("core", "/root/core")
 )
 image = (
-    core_image
-    .add_local_dir("web", "/root/web")
+    core_image.add_local_dir("web", "/root/web")
     .add_local_dir("sandbox", "/root/sandbox")
     .add_local_dir("core", "/root/core")
 )
@@ -50,12 +49,14 @@ async def make_create_app_request(prompt: str):
     for i in range(num_retries):
         try:
             async with httpx.AsyncClient(timeout=300.0) as client:
-                response = await client.post(f"{API_URL}/api/create", json={"prompt": prompt})
+                response = await client.post(
+                    f"{API_URL}/api/create", json={"prompt": prompt}
+                )
                 response.raise_for_status()
                 result = response.json()
                 app_id = result["app_id"]
                 return app_id
-        except Exception as e:
+        except Exception:
             continue
     raise Exception(f"Failed to create app after {num_retries} retries")
 
@@ -67,8 +68,8 @@ async def make_create_app_request(prompt: str):
 )
 @modal.concurrent(max_inputs=1000)
 async def create_app_loadtest_function(num_apps: int = 100):
-    import time
     import asyncio
+    import time
     from typing import Any
 
     start_time = time.time()
@@ -107,7 +108,9 @@ async def create_app_loadtest_function(num_apps: int = 100):
                         print(f"[{index}] failed: {e!r}")
             return None
 
-    tasks = [asyncio.create_task(create_app_with_limit(p, i)) for i, p in enumerate(prompts)]
+    tasks = [
+        asyncio.create_task(create_app_with_limit(p, i)) for i, p in enumerate(prompts)
+    ]
     results = await asyncio.gather(*tasks)  # no return_exceptions
 
     successful_apps = [r for r in results if r is not None]

@@ -4,10 +4,10 @@ This is a simple FastAPI server that can be used to test the sandbox server.
 This file is read in by the sandbox server and executed in the sandbox.
 """
 
+import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import uvicorn
 
 fastapi_app = FastAPI()
 
